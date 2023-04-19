@@ -69,7 +69,7 @@ if __name__ == "__main__":
 
     elif kind == 'animate':
         parser = argparse.ArgumentParser(description='Visualize latent embedding')
-        parser.add_argument('data_folder', required=True, help='target folder for preprocessed data')
+        parser.add_argument('data_folder', help='target folder for preprocessed data')
         parser.add_argument('--animate', nargs='*', help='animation task(s)')
         parser.add_argument('--plot', nargs='*', help='plot task(s)')
         parser.add_argument('--t_plot', default=25, type=int, help='time step for plot tasks')
