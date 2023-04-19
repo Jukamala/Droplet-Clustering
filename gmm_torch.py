@@ -65,7 +65,7 @@ class Decoder(torch.nn.Module):
 
 
 class VariationalAutoencoder(torch.nn.Module):
-    def __init__(self, beta=1, data_dims=33, hidden_dims=512, latent_dims=3):
+    def __init__(self, beta=0.001, data_dims=33, hidden_dims=512, latent_dims=3):
         super(VariationalAutoencoder, self).__init__()
         self.encoder = VariationalEncoder(data_dims, hidden_dims, latent_dims)
         self.decoder = Decoder(data_dims, hidden_dims, latent_dims)
@@ -182,19 +182,24 @@ def get_full_latent_by_time(data, model, gmm=None):
     yield lat, lab, x, y, z, t
 
 
-def latent_cluster(data):
+def latent_cluster(data=None, latent_dims=3, hidden_dims=1024, beta=0.001, loss_type='mse',
+                   load_path="models/vae_fullest_mse.cp", save_path="models/vae_fullest_mse.cp"):
     # Train latent encoding
-    vae = VariationalAutoencoder(latent_dims=3, hidden_dims=1024, beta=0).to(device)
-    vae.load_state_dict(torch.load("models/vae_fullest_mse.cp"))
+    vae = VariationalAutoencoder(latent_dims=latent_dims, hidden_dims=hidden_dims, beta=beta).to(device)
+    if load_path is not None:
+        vae.load_state_dict(torch.load("models/vae_fullest_mse.cp"))
+    if data is not None:
+        vae.trainer(data, epochs=1, save=save_path, loss_type=loss_type)
+
     # vae.trainer(data, epochs=1, save="models/vae_fullest_mse.cp", loss_type='mse')
     # vae.trainer(data, epochs=1, save="models/vae_fullest_cor.cp", loss_type='cor')
     # vae.trainer(data, epochs=1, save="models/vae_fullest_max.cp", loss_type='max')
 
-    def extract(x):
-        return vae((x / x.sum(axis=-1, keepdims=True)).to(device), return_latent=True)
-    data.dataset.transform = extract
-
     # Cluster latent space
+    # def extract(x):
+    #     return vae((x / x.sum(axis=-1, keepdims=True)).to(device), return_latent=True)
+    # data.dataset.transform = extract
+
     gmm = GMM(num_components=5, batch_size=25000, init_strategy='kmeans++',
               trainer_params=dict(accelerator='gpu', devices=1))
     # km = KMeans(num_clusters=5, batch_size=2048, trainer_params=dict(accelerator='gpu', devices=1))
