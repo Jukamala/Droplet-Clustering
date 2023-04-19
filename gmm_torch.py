@@ -182,14 +182,14 @@ def get_full_latent_by_time(data, model, gmm=None):
     yield lat, lab, x, y, z, t
 
 
-def latent_cluster(data=None, latent_dims=3, hidden_dims=1024, beta=0.001, loss_type='mse',
+def latent_cluster(data=None, latent_dims=3, hidden_dims=1024, beta=0.001, loss_type='mse', epochs=1,
                    load_path="models/vae_fullest_mse.cp", save_path="models/vae_fullest_mse.cp"):
     # Train latent encoding
     vae = VariationalAutoencoder(latent_dims=latent_dims, hidden_dims=hidden_dims, beta=beta).to(device)
     if load_path is not None:
         vae.load_state_dict(torch.load("models/vae_fullest_mse.cp"))
     if data is not None:
-        vae.trainer(data, epochs=1, save=save_path, loss_type=loss_type)
+        vae.trainer(data, epochs=epochs, save=save_path, loss_type=loss_type)
 
     # vae.trainer(data, epochs=1, save="models/vae_fullest_mse.cp", loss_type='mse')
     # vae.trainer(data, epochs=1, save="models/vae_fullest_cor.cp", loss_type='cor')

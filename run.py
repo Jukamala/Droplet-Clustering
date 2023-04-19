@@ -27,6 +27,7 @@ if __name__ == "__main__":
     --latent_dims - dimensions of the latent space, default=3
     --hidden_dims - size of the hidden layers in the encoder/decoder, default=1024
     --beta        - VAE loss weight for the KL loss, default=0.001
+    --epochs      - number of epochs to train, default=1
     
     animate:
     argv[2]   - target folder for preprocessed data
@@ -58,6 +59,7 @@ if __name__ == "__main__":
         parser.add_argument('--load', dest='load_path', default=None, help='path to load parameters checkpoint from')
         parser.add_argument('--loss', dest='loss_type', default='mse',
                             help='reconstruction loss type, from [mse, cor, max]')
+        parser.add_argument('--epochs', default=1, type=int, help='number of epochs to train')
         parser.add_argument('--latent_dims', default=3, type=int, help='dimensions of the latent space')
         parser.add_argument('--hidden_dims', default=1024, type=int,
                             help='size of the hidden layers in the encoder/decoder')
@@ -66,7 +68,6 @@ if __name__ == "__main__":
 
         data = Data(kwargs.pop('data_folder')).dataloader(batch_size=25000, weak_shuffle=True, num_workers=4)
         latent_cluster(**vars(parser.parse_args()))
-
     elif kind == 'animate':
         parser = argparse.ArgumentParser(description='Visualize latent embedding')
         parser.add_argument('data_folder', help='target folder for preprocessed data')
