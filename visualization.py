@@ -45,6 +45,7 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             ax = fig.add_subplot(111, projection='3d')
             l = np.array([-2, -2, -2]) if 'latent' in task else np.array([0, 0, 0])
             u = np.array([2, 2, 2]) if 'latent' in task else np.array([639, 639, 74])
+            # u = np.array([2, 2, 2]) if 'latent' in task else np.array([511, 511, 149])
             # adjust spacing
             ax.set_title('t')
             ax.set_xlabel('x')
@@ -129,7 +130,7 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
         [-1.5, 0, -0.3],     # green
         [-1, -0.4, 0.5],
         [-0.8, -0.2, 1.2],
-        [-0.2, 0.5, 1.3],    # blue
+        [-0.2, 0.5, 1.6],    # blue
         [0.2, -0.5, 0.5],    # magenta
         [0, 0, -0.5],        # orange
         [-0.5, 0, -1],       # olive
@@ -159,6 +160,7 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             dist = torch.sum((latent[:, None] - fixed[None, :])**2, axis=2)
             nearest = torch.argsort(dist, dim=0)[:1000]
             fixed = torch.stack([latent[nearest[:, i]].mean(dim=0) for i in range(fixed.shape[0])])
+            fixed_cols = (np.clip(fixed, mn, mx) - mn) / (mx - mn)
 
         # max number of points in latent plots 3D/2D (instead of all ~2.500.000)
         n3, n2 = 500000, 500000
@@ -236,6 +238,7 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             reset()
             if task == 'data3D':
                 ax.scatter(x, y, z, c=latent_cols, **latent_pl_args)
+                # ax.scatter(x, y, z, c='C0', **latent_pl_args)
             else:
                 ax.scatter(x, y, z, c=labels, **cluster_pl_args)
             ax.set_title('[ %dh %d0m ]' % ((t + 1)//6, (t+1) % 6))
@@ -250,8 +253,9 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             fig, ax, reset = fig_ax[task]
             reset()
             if task == 'data1D':
-                sorted = np.ones((75, 500, 3))
-                for h in range(75):
+                height = 150
+                sorted = np.ones((height, 500, 3))
+                for h in range(height):
                     # Sort colors by hue
                     rgb = latent_cols[z == h]
                     if rgb.shape[0] < 100:

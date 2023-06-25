@@ -24,6 +24,8 @@ atex/drop_distr_{%2d}d_{%2d}h_{%2d}m_{%2d}s.nc - [bins(33), time(1), X(640), Y(6
 DATA_PATH = 'data/drop_distr_subset.nc'
 DATA_FOLDER_RAW = 'data/atex/raw'
 DATA_FOLDER = 'data/atex/nz'
+DATA_ATEX_ALL = ['data/atex', 'data/atex_0.5x', 'data/atex_2.0x']
+DATA_DYCOMS_ALL = ['data/dycoms', 'data/dycoms_0.5x', 'data/dycoms_2.0x']
 
 
 def nc2json(source_path, target_path):
@@ -182,13 +184,25 @@ def collate_skip(data):
         return data
 
 
+def get_all_files(file_path):
+    """
+    get all files in any subfolders
+    """
+    if os.path.isfile(file_path):
+        return [file_path]
+    else:
+        # Recurse into all subfiles/subfolders
+        return [f_ for f in os.listdir(file_path) for f_ in get_all_files(os.path.join(file_path, f))]
+
+
 class Data(Dataset):
     """
     PyTorch dataset for HDF5 data
     """
     def __init__(self, file_path, transform=None):
-        self.file_paths = [os.path.join(file_path, f) for f in os.listdir(file_path)]\
-            if os.path.isdir(file_path) else [file_path]
+        if not type(file_path) == list:
+            file_path = [file_path]
+        self.file_paths = sum([get_all_files(fp) for fp in file_path], [])
         self.transform = transform
         self._files = [h5py.File(f, "r") for f in self.file_paths]
         self.lengths = [f['data'].shape[1] for f in self._files]

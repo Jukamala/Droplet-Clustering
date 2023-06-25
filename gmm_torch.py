@@ -84,13 +84,13 @@ class VariationalAutoencoder(torch.nn.Module):
         if return_latent:
             return z
         else:
-            return self.decoder(z)
+            return torch.exp(self.decoder(z))
 
     def trainer(self, data, epochs=20, save="models/vae.cp", plot=True, loss_type='mse'):
         losses = []
         opt = torch.optim.Adam(self.parameters())
         for epoch, batch in progress(range(epochs), inner=data, text='Training',
-                                 timed=[(1200, lambda: torch.save(self.state_dict(), save))]):
+                                     timed=[(1200, lambda: torch.save(self.state_dict(), save))]):
             x = batch['x'].to(device)
             base_sums = x.sum(axis=1)
             x /= base_sums[:, None]
@@ -183,11 +183,11 @@ def get_full_latent_by_time(data, model, gmm=None):
 
 
 def latent_cluster(data=None, latent_dims=3, hidden_dims=1024, beta=0.001, loss_type='mse', epochs=1,
-                   load_path="models/vae_fullest_mse.cp", save_path="models/vae_fullest_mse.cp"):
+                   load_path="models/atex_mse.cp", save_path="models/atex_mse.cp"):
     # Train latent encoding
     vae = VariationalAutoencoder(latent_dims=latent_dims, hidden_dims=hidden_dims, beta=beta).to(device)
     if load_path is not None:
-        vae.load_state_dict(torch.load("models/vae_fullest_mse.cp"))
+        vae.load_state_dict(torch.load(load_path))
     if data is not None:
         vae.trainer(data, epochs=epochs, save=save_path, loss_type=loss_type)
 
