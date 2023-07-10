@@ -155,19 +155,20 @@ class VariationalAutoencoder(torch.nn.Module):
 
 
 def get_full_latent_by_time(data, model, gmm=None):
-    lat, lab, x, y, z = [], [], [], [], []
+    lat, lab, x, y, z, m = [], [], [], [], [], []
     t = 0
     with torch.no_grad():
         for batch in progress(data, 'Visualizing latent space'):
-            if batch['t'] > t:
-                lat, x, y, z = list(map(torch.cat, [lat, x, y, z]))
+            if batch['t'] != t:
+                lat, x, y, z, m = list(map(torch.cat, [lat, x, y, z, m]))
                 if gmm is not None:
                     lab = torch.cat(lab)
-                yield lat, lab, x, y, z, t
-                lat, lab, x, y, z = [], [], [], [], []
-                t += 1
+                yield lat, lab, x, y, z, t, m
+                lat, lab, x, y, z, m = [], [], [], [], [], []
+                t = batch['t']
             d = batch['x']
-            d /= d.sum(axis=1)[:, None]
+            m += [d.sum(axis=1)]
+            d /= m[-1][:, None]
             lat += [model(d.to(device)).to("cpu")]
             if gmm is not None:
                 with no_prints():
@@ -176,10 +177,10 @@ def get_full_latent_by_time(data, model, gmm=None):
             x += [batch['loc'][0]]
             y += [batch['loc'][1]]
             z += [batch['loc'][2]]
-    lat, x, y, z = list(map(torch.cat, [lat, x, y, z]))
+    lat, x, y, z, m = list(map(torch.cat, [lat, x, y, z, m]))
     if gmm is not None:
         lab = torch.cat(lab)
-    yield lat, lab, x, y, z, t
+    yield lat, lab, x, y, z, t, m
 
 
 def latent_cluster(data=None, latent_dims=3, hidden_dims=1024, beta=0.001, loss_type='mse', epochs=1,

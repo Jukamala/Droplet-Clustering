@@ -28,6 +28,15 @@ DATA_ATEX_ALL = ['data/atex', 'data/atex_0.5x', 'data/atex_2.0x']
 DATA_DYCOMS_ALL = ['data/dycoms', 'data/dycoms_0.5x', 'data/dycoms_2.0x']
 
 
+def min_max_normalized(t, l=0, u=1, mn=None, mx=None):
+    """
+    Normalize data to be in interval [l, u]
+    """
+    mn = torch.min(t) if mn is None else mn
+    mx = torch.max(t) if mx is None else mx
+    return l + u * (np.clip(t, mn, mx) - mn) / (mx - mn)
+
+
 def nc2json(source_path, target_path):
     """
     Read netCDF4 and write to JSON (e.g. for use with STAN)
@@ -136,13 +145,14 @@ class PlotSampler(Sampler):
     """
     Fast Time-Sequential Batch Sampling for HDF5.
     """
-    def __init__(self, dataset_lengths, batch_size):
+    def __init__(self, dataset_lengths, batch_size, t_plot=None):
         self.batch_size = batch_size
         self.dataset_lengths = dataset_lengths
         self.anchors = np.cumsum([0] + self.dataset_lengths)[:-1]
 
-        # todo: remove
-        self.dataset_lengths = [l if i == 25 else 25000 for i, l in enumerate(self.dataset_lengths)]
+        # Skip all but one time step
+        if t_plot is not None:
+            self.dataset_lengths = [l if i == t_plot else 25000 for i, l in enumerate(self.dataset_lengths)]
 
         self.n_batches = [int(np.ceil(dl / self.batch_size)) for dl in self.dataset_lengths]
 
@@ -251,10 +261,10 @@ class Data(Dataset):
             return self[0].shape[1]
         return self.files[0]['data'].shape[dim]
 
-    def dataloader(self, batch_size=1, shuffle=None, by_time=False, **kwargs):
+    def dataloader(self, batch_size=1, shuffle=None, by_time=False, t_plot=None, **kwargs):
         if shuffle is None:
             if by_time:
-                sampler = PlotSampler(self.lengths, batch_size)
+                sampler = PlotSampler(self.lengths, batch_size, t_plot)
             else:
                 sampler = FastSampler(len(self), batch_size, weak_shuffle=kwargs.pop('weak_shuffle', False))
             return DataLoader(self, **kwargs, batch_sampler=sampler, collate_fn=collate_skip)
