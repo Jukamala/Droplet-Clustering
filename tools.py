@@ -25,6 +25,8 @@ def rgb_to_hsv(rgb):
     m4 = m1 & (rgb[:, 2] == maxc)
     hsv[m4, 0] = 4.0 + c[m4, 1] - c[m4, 0]
     hsv[m1, 0] = (hsv[m1, 0] / 6.0) % 1.0
+    # Adjust hue start
+    hsv[:, 0] = (hsv[:, 0] + 0.33) % 1
     return hsv
 
 

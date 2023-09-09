@@ -61,7 +61,7 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
                 u = np.array([2, 2, 2])
             elif 'decoded' in task:
                 l = np.array([0, 0, -1e-6])
-                u = np.array([32, 47, 1e-4])
+                u = np.array([32, 32, 1e-4])
             else:
                 l = np.array([0, 0, 0])
                 u = np.array([639, 639, 74])
@@ -110,12 +110,16 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
 
         elif '1D' in task:
             fig, ax = plt.subplots(figsize=(textwidth, 0.8 * textwidth))
+
             # adjust spacing
             if not final:
                 ax.set_title('t')
             ax.set_ylabel('y')
             fig.tight_layout()
-            reset = ax.clear
+
+            def reset():
+                ax.clear()
+                ax.set_ylim(0, 50)
 
         elif 'decoded' in task:
             fig, ax = plt.subplots(1, 2, figsize=(textwidth, 0.5 * textwidth))
@@ -156,6 +160,7 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
     mass_pl2_args = dict(cmap='Blues')
 
     fixed = np.array([
+        [0.2, 0, 0],         # red
         [0.5, 0.6, 0],       # yellow
         [-0.25, 1, 0],
         [-1, 0.5, 0],
@@ -163,7 +168,7 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
         [-1, -0.4, 0.5],
         [-0.8, -0.2, 1.2],
         [-0.2, 0.5, 1.6],    # blue
-        [0.2, -0.5, 0.5],    # magenta
+        [0.2, -0.5, 0.5],  # magenta
         [0, 0, -0.5],        # orange
         [-0.5, 0, -1],       # olive
     ])
@@ -205,29 +210,39 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             mass_cols = min_max_normalized(mass, mn=1e-5, mx=1e-3, u=4)
 
         # Re-adjust fixed points to nearby data and compute neighbors
-        if t == t_plot:
+        # todo: remove hardcode
+        if t == 25:
             dist = torch.sum((latent[:, None] - fixed[None, :])**2, axis=2)
             nearest = torch.argsort(dist, dim=0)[:1000]
-            fixed = torch.stack([latent[nearest[:, i]].mean(dim=0) for i in range(fixed.shape[0])])
-            fixed_cols = (np.clip(fixed, mn, mx) - mn) / (mx - mn)
+            fixed = np.array(torch.stack([latent[nearest[:, i]].mean(dim=0) for i in range(fixed.shape[0])]))
+            fixed_cols = min_max_normalized(fixed, mn=mn, mx=mx)
 
         # max number of points in latent plots 3D/2D (instead of all ~2.500.000)
         n3, n2 = 500000, 500000
         n3a = 0 if t % 47 < 4 else 10000 if t % 47 < 23 else 50000
 
         # in latent space
-        for task in {'latent3D', 'latent3D-all', 'latent3D-cluster', 'latent3D-fixed', 'latent3D-mass'} & ths_tasks:
+        for task in {'latent3D', 'latent3D-all', 'latent3D-cluster',
+                     'latent3D-fixed', 'latent3D-fixed-all', 'latent3D-mass'} & ths_tasks:
             fig, ax, reset = fig_ax[task]
             reset()
             if task == 'latent3D':
                 ax.scatter(latent[:n3, 0], latent[:n3, 1], latent[:n3, 2], c=latent_cols[:n3], **latent_pl_args)
-            if task == 'latent3D-all':
+            elif task == 'latent3D-all':
                 ax.scatter(latent[:n3a, 0], latent[:n3a, 1], latent[:n3a, 2], c=latent_cols[:n3a], **latent_pl_args)
             elif task == 'latent3D-fixed':
                 ax.scatter(latent[:n3, 0], latent[:n3, 1], latent[:n3, 2], c=latent_cols[:n3], **latent_pl_args)
                 # Fixed points
                 ax.scatter(fixed[:, 0], fixed[:, 1], fixed[:, 2], zorder=1000, c='black', marker='X', s=35)
                 ax.scatter(fixed[:, 0], fixed[:, 1], fixed[:, 2], zorder=1100, c=fixed_cols, marker='X', s=25)
+            elif task == 'latent3D-fixed-all':
+                ax.scatter(latent[:n3a, 0], latent[:n3a, 1], latent[:n3a, 2], c=latent_cols[:n3a], **latent_pl_args)
+                if t == -1:
+                    # Fixed line
+                    ax.plot(fixed[:7, 0], fixed[:7, 1], fixed[:7, 2], c='black', lw=2)
+                    # Fixed plots
+                    ax.scatter(fixed[:7, 0], fixed[:7, 1], fixed[:7, 2], zorder=1000, c='black', marker='X', s=25)
+                    ax.scatter(fixed[:7, 0], fixed[:7, 1], fixed[:7, 2], zorder=1100, c=fixed_cols[:7], marker='X', s=20)
             elif task == 'latent3D-cluster':
                 ax.scatter(latent[:n3, 0], latent[:n3, 1], latent[:n3, 2], c=labels[:n3], **cluster_pl_args)
                 # Cluster centers
@@ -472,12 +487,12 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             fig, ax, reset = fig_ax[task]
             reset()
 
-            ns = 1000
-            nf = 55
             fixed_ = torch.tensor(np.concatenate(
-                [np.linspace(fixed[i], fixed[i + 1], 10)[:(9 if i < 5 else 10)] for i in range(6)]))
+                [np.linspace(fixed[i], fixed[i + 1], 10)[:(9 if i < 5 else 10)] for i in range(7)]))
             fixed_cols = min_max_normalized(fixed_, mn=mn, mx=mx)
 
+            ns = 1000
+            nf = fixed_.shape[0]
             dist = torch.sum((latent[:, None] - fixed_[None, :]) ** 2, axis=2)
             nearest = torch.argsort(dist, dim=0)[:ns]
             dec = decoder(fixed_.to(device)).cpu()
@@ -488,8 +503,10 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
 
             nt, nb = neighbors_mean.shape
             x_, y_ = np.meshgrid(np.arange(nb), np.arange(nt), indexing='ij')
+            y_ = y_ * nb/nt
             if task == 'decoded3D-fixed-pre':
-                ax.plot_surface(x_, y_, neighbors_mean.T) #, color=np.tile(fixed_cols[:, None, :], [1, nb, 1]))
+                ax.plot_surface(x_, y_, neighbors_mean.T, facecolors=np.tile(fixed_cols[None, :], [nb, 1, 1]),
+                                edgecolor='k', shade=False)
             elif task == 'decoded3D-fixed-post':
                 pass  # ax.plot(np.arange(33), dec_neighbors[k], alpha=1 / 100, c=neighbors_cols[k])
             else:
