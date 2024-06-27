@@ -1,19 +1,20 @@
 import os
-import torch
 import sys
 import numpy as np
+from numbers import Number
 from functools import partial
 from scipy.linalg import toeplitz
+from scipy.optimize import fsolve
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import proj3d
-import seaborn as sns
+
 from pycave.bayes import GaussianMixture as GMM
 from pycave.clustering import KMeans
+import torch
+from torch.distributions import constraints
+from torch.distributions.utils import broadcast_all
+
 from data import Data, DATA_PATH, DATA_FOLDER, TData
 from tools import progress
-
-sns.set_theme(style='whitegrid')
-
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -28,9 +29,101 @@ class no_prints:
         sys.stdout = self._original_stdout
 
 
+class ModifiedGammaDistribution(torch.distributions.ExponentialFamily):
+    """
+    X ~ MGD(alpha, beta, gamma)
+    For x in (0, inf):
+    p(x) = [gamma * b^(alpha/gamma) / Gamma(alpha/gamma)] * x^(alpha - 1) * exp(- beta x^gamma)
+    un-normalized via
+    n(x) = N * x^(alpha - 1) * exp(- beta x^gamma)
+    with alpha, beta, gamma > 0
+
+    Equivalent to:
+    n(x) = N * x^mu * exp(- Lambda x^gamma)
+    where mu = alpha - 1, Lambda = beta
+    n(x) = N * x^mu * exp(- mu / gamma * (x / c)^gamma)
+         = N * exp(- mu / (gamma * c^gamma)) * x^alpha' * exp(- alpha' / gamma * x^gamma)
+    where mu = alpha - 1, c = ((alpha - 1) / (beta * gammma))^(1/gamma)
+
+    Note:
+    E[X^k] = beta^(-k/gamma) * Gamma((alpha + k) / gamma) / Gamma(alpha/gamma)
+    E[X^(k+1)] / E[X^k] = beta^(-1/gamma) * Gamma((alpha + k + 1) / gamma) / Gamma((alpha + k) / gamma)
+    X ~ Gamma(alpha, beta) for gamma = 1
+
+    References:
+    https://journals.ametsoc.org/view/journals/atsc/68/7/2011jas3645.1.xml?tab_body=pdf
+    """
+
+    arg_constraints = {
+        'alpha': constraints.positive,
+        'beta': constraints.positive,
+        'gamma': constraints.positive,
+    }
+    support = constraints.positive
+
+    def __init__(self, alpha, beta, gamma, validate_args=None):
+        self.alpha, self.beta, self.gamma = broadcast_all(alpha, beta, gamma)
+        if isinstance(alpha, Number) and isinstance(beta, Number) and isinstance(gamma, Number):
+            batch_shape = torch.Size()
+        else:
+            batch_shape = self.alpha.size()
+        super().__init__(batch_shape, validate_args=validate_args)
+
+    @property
+    def mean(self):
+        return self.beta ** (-1 / self.gamma) * torch.exp(
+            torch.lgamma((self.alpha + 1) / self.gamma) - torch.lgamma(self.alpha / self.gamma)
+        )
+
+    def moment(self, k):
+        return self.beta ** (-k / self.gamma) * torch.exp(
+            torch.lgamma((self.alpha + k) / self.gamma) - torch.lgamma(self.alpha / self.gamma)
+        )
+
+    def log_prob(self, value):
+        value = torch.as_tensor(value, dtype=self.alpha.dtype, device=self.alpha.device)
+        if self._validate_args:
+            self._validate_sample(value)
+        return (
+            torch.log(self.gamma)
+            + torch.xlogy(self.alpha / self.gamma, self.beta)
+            + torch.xlogy(self.alpha - 1, value)
+            - self.beta * value ** self.gamma
+            - torch.lgamma(self.alpha / self.gamma)
+        )
+
+
+class MomentAutoEncoder(torch.nn.Module):
+    def __init__(self, family=ModifiedGammaDistribution):
+        super().__init__()
+        self.family = family
+
+    def forward(self, x, return_latent=False, from_latent=False):
+        if from_latent:
+            z, self.c = x
+        else:
+            self.c = x.sum(axis=1, keepdims=True)
+            x /= self.c
+            # assume bin counts for [i, i+1] are all from i and estimate via MOM
+            t = torch.arange(x.shape[1]).to(x.device)
+            z = torch.stack([((x * t ** k) ** (1/k)).sum(axis=1) for k in range(1, 4)], axis=1)
+        if return_latent:
+            self.c = None
+            return z
+        else:
+            # matching moments is ugly, so do it numerically
+            def moments_func(p):
+                tuple([p[1] ** (-k / p[2]) * torch.exp(
+                    torch.lgamma((p[0] + k) / p[2]) - torch.lgamma(p[0] / p[2])
+                ) for k in range(1, 4)])
+            p = fsolve(moments_func, z[0])
+            self.c = None
+            return None
+
+
 class VariationalEncoder(torch.nn.Module):
     def __init__(self, in_dims=33, hidden_dims=512, latent_dims=3):
-        super(VariationalEncoder, self).__init__()
+        super().__init__()
         self.linear1 = torch.nn.Linear(in_dims, hidden_dims)
         self.linear_mean = torch.nn.Linear(hidden_dims, latent_dims)
         self.linear_logstd = torch.nn.Linear(hidden_dims, latent_dims)
@@ -185,6 +278,7 @@ def get_full_latent_by_time(data, model, gmm=None):
 
 def latent_cluster(data=None, latent_dims=3, hidden_dims=1024, beta=0.001, loss_type='mse', epochs=1,
                    load_path="models/atex_mse.cp", save_path="models/atex_mse.cp"):
+
     # Train latent encoding
     vae = VariationalAutoencoder(latent_dims=latent_dims, hidden_dims=hidden_dims, beta=beta).to(device)
     if load_path is not None:
@@ -218,3 +312,8 @@ def latent_cluster(data=None, latent_dims=3, hidden_dims=1024, beta=0.001, loss_
     # fullest_cor: 5-0.001
     # fullest_max: 5-0.001
     # ae_fullest: 5-0
+
+
+def latent_moments():
+    moments = MomentAutoEncoder()
+    return partial(moments, return_latent=True), partial(moments, from_latent=True)

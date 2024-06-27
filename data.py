@@ -152,7 +152,9 @@ class PlotSampler(Sampler):
 
         # Skip all but one time step
         if t_plot is not None:
-            self.dataset_lengths = [l if i == t_plot else 25000 for i, l in enumerate(self.dataset_lengths)]
+            if not hasattr(t_plot, '__iter__'):
+                t_plot = [t_plot]
+            self.dataset_lengths = [l if i in t_plot else 25000 for i, l in enumerate(self.dataset_lengths)]
 
         self.n_batches = [int(np.ceil(dl / self.batch_size)) for dl in self.dataset_lengths]
 

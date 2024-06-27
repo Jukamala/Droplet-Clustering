@@ -2,20 +2,24 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 from matplotlib.animation import FFMpegWriter
+from mpl_toolkits.mplot3d import Axes3D
 from mpl_toolkits.mplot3d import proj3d
+from matplotlib.patches import FancyArrowPatch
 import seaborn as sns
 from scipy.stats import norm
 from sklearn.cluster import MiniBatchKMeans as KMeans
 import ot
 from scipy.sparse.csgraph import floyd_warshall
-from gmm_torch import get_full_latent_by_time
+from latent_model import get_full_latent_by_time
 from tools import rgb_to_hsv
 from data import min_max_normalized
+
+bbox = None
 
 plt.rcParams['animation.ffmpeg_path'] = 'C:\\Users\\Justus\\PycharmProjects\\Droplet-Clustering\\venv\\ffmpeg.exe'
 sns.set_theme(style='whitegrid')
 plt.rcParams['svg.fonttype'] = 'none'
-plt.rcParams['savefig.dpi'] = 500
+plt.rcParams['savefig.dpi'] = 300
 plt.rcParams['axes3d.xaxis.panecolor'] = [0.98, 0.98, 0.98]
 plt.rcParams['axes3d.yaxis.panecolor'] = [0.98, 0.98, 0.98]
 plt.rcParams['axes3d.zaxis.panecolor'] = [0.98, 0.98, 0.98]
@@ -29,12 +33,13 @@ both at fixed time steps and animated over all time steps.
 """
 
 
-def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, plot=None, animate=None, final=False):
+def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, plot=None, animate=None,
+                      final=False, savepresuf=('tmp_', ''), latent_type='vae'):
     """
     Visualize the latent space
 
     :param data: Dataloader without time-mixed batches
-    :param model: VAE latent encoder (of the mean)
+    :param model: (VAE) latent encoder
     :param gmm: Fitted cluster object
     :param k: number of clusters
     :param d: number of latent dimensions
@@ -47,18 +52,23 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
         'mass3D': Plot mass per point
     :param t_plot: time at which to plot (last time is -1)
     :param final: if True, save as svg without title
+    :param latent_type: change color normalization and hue shift based on latent space
     """
+    if plot is None and animate is None:
+        return
+    assert latent_type in ['vae', 'mom']
     # todo: assert cluster needs gmm
     # Prepare figures
     fig_ax = {}
     for task in (set(plot) if plot is not None else set()) | (set(animate) if animate is not None else set()):
         if '3D' in task:
-            # fig = plt.figure(figsize=(2 * textwidth, 2 * 0.9 * textwidth))
+            # scale up x1.5 for finer scatter plots
             fig = plt.figure(figsize=(1.5 * textwidth, 1.5 * 0.9 * textwidth))
             ax = fig.add_subplot(111, projection='3d')
             if 'latent' in task:
-                l = np.array([-2, -2, -2])
-                u = np.array([2, 2, 2])
+                l, u = None, None
+                # l = np.array([-1.5, -1, -2])
+                # u = np.array([1, 1.5, 1.5])
             elif 'decoded' in task:
                 l = np.array([0, 0, -1e-6])
                 u = np.array([32, 32, 1e-4])
@@ -69,6 +79,9 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             # adjust spacing
             if not final:
                 ax.set_title('t')
+            ax.set_xticks([-1, 0, 1])
+            ax.set_yticks([-1, 0, 1])
+            ax.set_zticks([-1, 0, 1])
             ax.set_xlabel('x')
             ax.set_ylabel('y')
             ax.set_zlabel('z')
@@ -77,9 +90,9 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             def reset(l=l, u=u, task=task):
                 if 'all' not in task:
                     ax.clear()
-                ax.set_xlim(l[0], u[0])
-                ax.set_ylim(l[1], u[1])
-                ax.set_zlim(l[2], u[2])
+                # ax.set_xlim(l[0], u[0])
+                # ax.set_ylim(l[1], u[1])
+                # ax.set_zlim(l[2], u[2])
 
         elif '2D' in task:
             fig, ax = plt.subplots(1, 3, figsize=(textwidth, 0.35 * textwidth))
@@ -109,7 +122,7 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
                 ax[2].set_ylim(l[2], u[2])
 
         elif '1D' in task:
-            fig, ax = plt.subplots(figsize=(textwidth, 0.8 * textwidth))
+            fig, ax = plt.subplots(figsize=(textwidth, textwidth))
 
             # adjust spacing
             if not final:
@@ -168,7 +181,7 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
         [-1, -0.4, 0.5],
         [-0.8, -0.2, 1.2],
         [-0.2, 0.5, 1.6],    # blue
-        [0.2, -0.5, 0.5],  # magenta
+        [0.2, -0.5, 0.5],    # magenta
         [0, 0, -0.5],        # orange
         [-0.5, 0, -1],       # olive
     ])
@@ -178,7 +191,7 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
         writers = {}
         for task in animate:
             writers[task] = FFMpegWriter(fps=5)
-            writers[task].setup(fig_ax[task][0], 'results/tmp_%s.mp4' % task)
+            writers[task].setup(fig_ax[task][0], 'results/%s%s%s.mp4' % (savepresuf[0], task, savepresuf[1]))
 
     if gmm is not None:
         means, stds = gmm.model_.means, gmm.model_.covariances
@@ -192,9 +205,11 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
                     set([p for p in plot if 'all' in p])
 
         # Normalize and compute colors
-        # mn, mx = np.array([-1.4, -1.5, -0.85]), np.array([0.78, 1.2, 1.8])
-        mn, mx = np.array([-1.2, -0.95, -1.15]), np.array([0.1, 0.44, 0.95])
+        # mn, mx = np.array([-1.4, -1.5, -0.85]), np.array([0.78, 1.2, 1.8])  # old
+        # mn, mx = np.array([-1.2, -0.95, -1.15]), np.array([0.1, 0.44, 0.95])  # paper
+        mn, mx = np.array([4.5, 11, 17]), np.array([17, 55, 90])  # paper moments
         # print(np.percentile(latent, 1, axis=0), np.percentile(latent, 99, axis=0))
+        # mn, mx = np.percentile(latent, 3, axis=0), np.percentile(latent, 97, axis=0)
         latent_cols = min_max_normalized(latent, mn=mn, mx=mx)
         if np.any(['mass' in task for task in ths_tasks]):
             mass_cols_xy = torch.zeros(640, 640)
@@ -210,8 +225,7 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             mass_cols = min_max_normalized(mass, mn=1e-5, mx=1e-3, u=4)
 
         # Re-adjust fixed points to nearby data and compute neighbors
-        # todo: remove hardcode
-        if t == 25:
+        if t == (t_plot if not t_plot == -1 else 25):
             dist = torch.sum((latent[:, None] - fixed[None, :])**2, axis=2)
             nearest = torch.argsort(dist, dim=0)[:1000]
             fixed = np.array(torch.stack([latent[nearest[:, i]].mean(dim=0) for i in range(fixed.shape[0])]))
@@ -230,6 +244,27 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
                 ax.scatter(latent[:n3, 0], latent[:n3, 1], latent[:n3, 2], c=latent_cols[:n3], **latent_pl_args)
             elif task == 'latent3D-all':
                 ax.scatter(latent[:n3a, 0], latent[:n3a, 1], latent[:n3a, 2], c=latent_cols[:n3a], **latent_pl_args)
+                ax.set_box_aspect([4, 4, 3.8])
+                if t == -1:
+                    # ax.plot(fixed[:7, 0], fixed[:7, 1], fixed[:7, 2], lw=3, c='grey')
+                    path = np.copy(fixed[:8])
+                    path[-1] = 0.05 * path[-2] + 0.95 * path[-1]
+                    ax.plot(path[:, 0], path[:, 1], path[:, 2], lw=2, c='red')
+                    # Arrowhead
+
+                    class Arrow3D(FancyArrowPatch):
+                        def __init__(self, xs, ys, zs, *args, **kwargs):
+                            super().__init__((0, 0), (0, 0), *args, **kwargs)
+                            self._verts3d = xs, ys, zs
+
+                        def do_3d_projection(self, renderer=None):
+                            xs3d, ys3d, zs3d = self._verts3d
+                            xs, ys, zs = proj3d.proj_transform(xs3d, ys3d, zs3d, self.axes.M)
+                            self.set_positions((xs[0], ys[0]), (xs[1], ys[1]))
+
+                            return 1000
+
+                    ax.add_artist(Arrow3D(fixed[6:8, 0], fixed[6:8, 1], fixed[6:8, 2], arrowstyle="-|>", color="red", mutation_scale=20, shrinkA=0, shrinkB=0))
             elif task == 'latent3D-fixed':
                 ax.scatter(latent[:n3, 0], latent[:n3, 1], latent[:n3, 2], c=latent_cols[:n3], **latent_pl_args)
                 # Fixed points
@@ -258,18 +293,29 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             ax.set_ylabel('2nd latent dim [green]')
             ax.set_zlabel('3rd latent dim [blue]')
             if plot is not None and task in plot and t_plot == t:
-                fig_ax[task][0].savefig('results/tmp_%s.png' % task)
+                writers[task].setup(fig_ax[task][0], 'results/%s%s%s.png' % (savepresuf[0], task, savepresuf[1]))
             if animate is not None and task in animate:
                 writers[task].grab_frame()
 
         # in projected latent space
-        for task in {'latent2D', 'latent2D-cluster', 'latent2D-fixed'} & ths_tasks:
+        for task in {'latent2D', 'latent2D-all', 'latent2D-cluster', 'latent2D-fixed'} & ths_tasks:
             fig, ax, reset = fig_ax[task]
             reset()
             if task == 'latent2D':
                 ax[0].scatter(latent[:n2, 0], latent[:n2, 1], c=latent_cols[:n2], **latent_pl_args)
                 ax[1].scatter(latent[:n2, 0], latent[:n2, 2], c=latent_cols[:n2], **latent_pl_args)
                 ax[2].scatter(latent[:n2, 1], latent[:n2, 2], c=latent_cols[:n2], **latent_pl_args)
+            elif task == 'latent2D-all':
+                ax[0].scatter(latent[:n3a, 0], latent[:n3a, 1], c=latent_cols[:n3a], **latent_pl_args)
+                ax[1].scatter(latent[:n3a, 0], latent[:n3a, 2], c=latent_cols[:n3a], **latent_pl_args)
+                ax[2].scatter(latent[:n3a, 1], latent[:n3a, 2], c=latent_cols[:n3a], **latent_pl_args)
+                if t == -1:
+                    ax[0].plot(fixed[:7, 0], fixed[:7, 1], lw=3, c='grey')
+                    ax[0].plot(fixed[:7, 0], fixed[:7, 1], lw=1.5, c='red')
+                    ax[1].plot(fixed[:7, 0], fixed[:7, 2], lw=3, c='grey')
+                    ax[1].plot(fixed[:7, 0], fixed[:7, 2], lw=1.5, c='red')
+                    ax[2].plot(fixed[:7, 1], fixed[:7, 2], lw=3, c='grey')
+                    ax[2].plot(fixed[:7, 1], fixed[:7, 2], lw=1.5, c='red')
             elif task == 'latent2D-fixed':
                 ax[0].scatter(latent[:n2, 0], latent[:n2, 1], c=latent_cols[:n2], **latent_pl_args)
                 ax[1].scatter(latent[:n2, 0], latent[:n2, 2], c=latent_cols[:n2], **latent_pl_args)
@@ -281,7 +327,7 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
                 ax[0].scatter(fixed[:, 0], fixed[:, 1], c=fixed_cols, marker='X', s=25)
                 ax[1].scatter(fixed[:, 0], fixed[:, 2], c=fixed_cols, marker='X', s=25)
                 ax[2].scatter(fixed[:, 1], fixed[:, 2], c=fixed_cols, marker='X', s=25)
-            else:
+            elif task == 'latent2D-cluster':
                 ax[0].scatter(latent[:n2, 0], latent[:n2, 1], s=1, c=labels[:n2], **cluster_pl_args)
                 ax[1].scatter(latent[:n2, 0], latent[:n2, 2], s=1, c=labels[:n2], **cluster_pl_args)
                 ax[2].scatter(latent[:n2, 1], latent[:n2, 2], s=1, c=labels[:n2], **cluster_pl_args)
@@ -292,6 +338,8 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
                 ax[0].scatter(means[:, 0], means[:, 1], **center_pl_args)
                 ax[1].scatter(means[:, 0], means[:, 2], **center_pl_args)
                 ax[2].scatter(means[:, 1], means[:, 2], **center_pl_args)
+            else:
+                raise ValueError('Unknown task')
             if not final:
                 ax[1].set_title('Latent Space Encoding [ %dh %d0m ]' % ((t + 1)//6, (t+1) % 6))
             ax[0].set_xlabel('1st dim [red]')
@@ -301,7 +349,7 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             ax[2].set_xlabel('2nd dim')
             ax[2].set_ylabel('3th dim')
             if plot is not None and task in plot and t_plot == t:
-                fig_ax[task][0].savefig('results/tmp_%s.png' % task)
+                fig_ax[task][0].savefig('results/%s%s%s.png' % (savepresuf[0], task, savepresuf[1]))
             if animate is not None and task in animate:
                 writers[task].grab_frame()
 
@@ -324,7 +372,7 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             ax.set_ylabel('y')
             ax.set_zlabel('height')
             if plot is not None and task in plot and t_plot == t:
-                fig_ax[task][0].savefig('results/tmp_%s.png' % task)
+                fig_ax[task][0].savefig('results/%s%s%s.png' % (savepresuf[0], task, savepresuf[1]))
             if animate is not None and task in animate:
                 writers[task].grab_frame()
 
@@ -348,7 +396,7 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             ax[2].set_xlabel('y')
             ax[2].set_ylabel('height')
             if plot is not None and task in plot and t_plot == t:
-                fig_ax[task][0].savefig('results/tmp_%s.png' % task)
+                fig_ax[task][0].savefig('results/%s%s%s.png' % (savepresuf[0], task, savepresuf[1]))
             if animate is not None and task in animate:
                 writers[task].grab_frame()
 
@@ -362,6 +410,8 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
                 for h in range(height):
                     # Sort colors by hue
                     rgb = latent_cols[z == h]
+                    rgb = rgb[rgb.std(axis=1) > 0]
+                    # remove white/black
                     if rgb.shape[0] < 100:
                         continue
                     hsv = rgb_to_hsv(rgb)
@@ -374,16 +424,28 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
                     sorted[h] = 0.3 + 0.7 * (ths_sorted - mn) / (mx - mn)
                 # saturation and value set to 1
                 with sns.axes_style("white"):
-                    ax.imshow(sorted, aspect='auto', origin='lower')
+                    ax.imshow(sorted, aspect='auto', origin='lower', interpolation='bilinear')
             else:
                 raise NotImplementedError
             if not final:
+                ax.set_ylabel('height')
                 ax.set_title('[ %dh %d0m ]' % ((t + 1) // 6, (t + 1) % 6))
-            ax.set_ylabel('height')
+            else:
+                # left panel
+                if t_plot == 11:
+                    for item in ([ax.yaxis.label] + ax.get_yticklabels()):
+                        item.set_fontsize(20)
+                else:
+                    ax.set_yticklabels([])
+                    ax.set_ylabel('')
             sns.despine(bottom=True)
             ax.set_xticks([])
             if plot is not None and task in plot and t_plot == t:
-                fig_ax[task][0].savefig('results/tmp_%s.png' % task)
+                global bbox
+                if bbox is None:
+                    bbox = fig.get_tightbbox(fig.canvas.get_renderer())
+                fig_ax[task][0].savefig('results/%s%s%s.png' % (savepresuf[0], task, savepresuf[1]), bbox_inches=bbox, pad_inches=0)
+                # fig_ax[task][0].savefig('results/%s%s%s.png' % (savepresuf[0], task, savepresuf[1]))
             if animate is not None and task in animate:
                 writers[task].grab_frame()
 
@@ -477,7 +539,7 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             ax.set_ylabel('2nd dim')
             ax.set_zlabel('3rd dim')
             if plot is not None and task in plot and t_plot == t:
-                fig_ax[task][0].savefig('results/tmp_%s.png' % task, dpi=1000)
+                fig_ax[task][0].savefig('results/%s%s%s.png' % (savepresuf[0], task, savepresuf[1]), dpi=1000)
             if animate is not None and task in animate:
                 writers[task].grab_frame()
 
@@ -520,7 +582,7 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             ax.set_zlabel('Mixing ratio [kg/kg]')
 
             if plot is not None and task in plot and t_plot == t:
-                fig_ax[task][0].savefig('results/tmp_%s.png' % task)
+                fig_ax[task][0].savefig('results/%s%s%s.png' % (savepresuf[0], task, savepresuf[1]))
             if animate is not None and task in animate:
                 writers[task].grab_frame()
 
