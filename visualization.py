@@ -66,9 +66,11 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             fig = plt.figure(figsize=(1.5 * textwidth, 1.5 * 0.9 * textwidth))
             ax = fig.add_subplot(111, projection='3d')
             if 'latent' in task:
-                l, u = None, None
-                # l = np.array([-1.5, -1, -2])
-                # u = np.array([1, 1.5, 1.5])
+                if latent_type == 'mom':
+                    l, u = None, None
+                else:
+                    l = np.array([-1.5, -1, -2])
+                    u = np.array([1, 1.5, 1.5])
             elif 'decoded' in task:
                 l = np.array([0, 0, -1e-6])
                 u = np.array([32, 32, 1e-4])
@@ -79,9 +81,12 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             # adjust spacing
             if not final:
                 ax.set_title('t')
-            ax.set_xticks([-1, 0, 1])
-            ax.set_yticks([-1, 0, 1])
-            ax.set_zticks([-1, 0, 1])
+            if latent_type == 'mom':
+                pass
+            else:
+                ax.set_xticks([-1, 0, 1])
+                ax.set_yticks([-1, 0, 1])
+                ax.set_zticks([-1, 0, 1])
             ax.set_xlabel('x')
             ax.set_ylabel('y')
             ax.set_zlabel('z')
@@ -90,14 +95,18 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             def reset(l=l, u=u, task=task):
                 if 'all' not in task:
                     ax.clear()
-                # ax.set_xlim(l[0], u[0])
-                # ax.set_ylim(l[1], u[1])
-                # ax.set_zlim(l[2], u[2])
+                if l is not None:
+                    ax.set_xlim(l[0], u[0])
+                    ax.set_ylim(l[1], u[1])
+                    ax.set_zlim(l[2], u[2])
 
         elif '2D' in task:
             fig, ax = plt.subplots(1, 3, figsize=(textwidth, 0.35 * textwidth))
-            l = np.array([-2, -2, -2]) if 'latent' in task else np.array([0, 0, 0])
-            u = np.array([2, 2, 2]) if 'latent' in task else np.array([639, 639, 74])
+            if latent_type == 'mom':
+                l, u = None, None
+            else:
+                l = np.array([-2, -2, -2]) if 'latent' in task else np.array([0, 0, 0])
+                u = np.array([2, 2, 2]) if 'latent' in task else np.array([639, 639, 74])
 
             # adjust spacing
             if not final:
@@ -110,16 +119,17 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             ax[2].set_ylabel('y')
             fig.tight_layout()
 
-            def reset():
+            def reset(l=l, u=u):
                 ax[0].clear()
                 ax[1].clear()
                 ax[2].clear()
-                ax[0].set_xlim(l[0], u[0])
-                ax[0].set_ylim(l[1], u[1])
-                ax[1].set_xlim(l[0], u[0])
-                ax[1].set_ylim(l[2], u[2])
-                ax[2].set_xlim(l[1], u[1])
-                ax[2].set_ylim(l[2], u[2])
+                if l is not None:
+                    ax[0].set_xlim(l[0], u[0])
+                    ax[0].set_ylim(l[1], u[1])
+                    ax[1].set_xlim(l[0], u[0])
+                    ax[1].set_ylim(l[2], u[2])
+                    ax[2].set_xlim(l[1], u[1])
+                    ax[2].set_ylim(l[2], u[2])
 
         elif '1D' in task:
             fig, ax = plt.subplots(figsize=(textwidth, textwidth))
@@ -166,25 +176,32 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
 
         fig_ax[task] = (fig, ax, reset)
 
-    latent_pl_args = dict(s=1, alpha=1/255)
+    if latent_type == 'mom':
+        latent_pl_args = dict(s=1, alpha=1/10)
+    else:
+        latent_pl_args = dict(s=1, alpha=1/255)
     cluster_pl_args = dict(cmap='tab10', vmin=0, vmax=9, s=1, alpha=1/255)
     center_pl_args = dict(c=list(range(k)), cmap='tab10', s=25, marker='X', vmin=0, vmax=9)
     mass_pl_args = dict(cmap='Blues', alpha=1/255)
     mass_pl2_args = dict(cmap='Blues')
 
-    fixed = np.array([
-        [0.2, 0, 0],         # red
-        [0.5, 0.6, 0],       # yellow
-        [-0.25, 1, 0],
-        [-1, 0.5, 0],
-        [-1.5, 0, -0.3],     # green
-        [-1, -0.4, 0.5],
-        [-0.8, -0.2, 1.2],
-        [-0.2, 0.5, 1.6],    # blue
-        [0.2, -0.5, 0.5],    # magenta
-        [0, 0, -0.5],        # orange
-        [-0.5, 0, -1],       # olive
-    ])
+    # Pathway of precipitation
+    if latent_type == "mom":
+        fixed = None
+    else:
+        fixed = np.array([
+            [0.2, 0, 0],         # red
+            [0.5, 0.6, 0],       # yellow
+            [-0.25, 1, 0],
+            [-1, 0.5, 0],
+            [-1.5, 0, -0.3],     # green
+            [-1, -0.4, 0.5],
+            [-0.8, -0.2, 1.2],
+            [-0.2, 0.5, 1.6],    # blue
+            [0.2, -0.5, 0.5],    # magenta
+            [0, 0, -0.5],        # orange
+            [-0.5, 0, -1],       # olive
+        ])
 
     # Start recording
     if animate is not None:
@@ -205,11 +222,14 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
                     set([p for p in plot if 'all' in p])
 
         # Normalize and compute colors
-        # mn, mx = np.array([-1.4, -1.5, -0.85]), np.array([0.78, 1.2, 1.8])  # old
-        # mn, mx = np.array([-1.2, -0.95, -1.15]), np.array([0.1, 0.44, 0.95])  # paper
-        mn, mx = np.array([4.5, 11, 17]), np.array([17, 55, 90])  # paper moments
-        # print(np.percentile(latent, 1, axis=0), np.percentile(latent, 99, axis=0))
-        # mn, mx = np.percentile(latent, 3, axis=0), np.percentile(latent, 97, axis=0)
+        if latent_type == 'mom':
+            mn, mx = np.array([4.5, 11, 17]), np.array([17, 55, 90])  # paper moments
+            # print(np.percentile(latent, 1, axis=0), np.percentile(latent, 99, axis=0))
+            # mn, mx = np.percentile(latent, 3, axis=0), np.percentile(latent, 97, axis=0)
+        else:
+            # mn, mx = np.array([-1.4, -1.5, -0.85]), np.array([0.78, 1.2, 1.8])  # old
+            mn, mx = np.array([-1.2, -0.95, -1.15]), np.array([0.1, 0.44, 0.95])  # paper
+
         latent_cols = min_max_normalized(latent, mn=mn, mx=mx)
         if np.any(['mass' in task for task in ths_tasks]):
             mass_cols_xy = torch.zeros(640, 640)
@@ -225,7 +245,7 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             mass_cols = min_max_normalized(mass, mn=1e-5, mx=1e-3, u=4)
 
         # Re-adjust fixed points to nearby data and compute neighbors
-        if t == (t_plot if not t_plot == -1 else 25):
+        if t == (t_plot if not t_plot == -1 else 25) and fixed is not None:
             dist = torch.sum((latent[:, None] - fixed[None, :])**2, axis=2)
             nearest = torch.argsort(dist, dim=0)[:1000]
             fixed = np.array(torch.stack([latent[nearest[:, i]].mean(dim=0) for i in range(fixed.shape[0])]))
@@ -245,7 +265,7 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             elif task == 'latent3D-all':
                 ax.scatter(latent[:n3a, 0], latent[:n3a, 1], latent[:n3a, 2], c=latent_cols[:n3a], **latent_pl_args)
                 ax.set_box_aspect([4, 4, 3.8])
-                if t == -1:
+                if t == -1 and fixed is not None:
                     # ax.plot(fixed[:7, 0], fixed[:7, 1], fixed[:7, 2], lw=3, c='grey')
                     path = np.copy(fixed[:8])
                     path[-1] = 0.05 * path[-2] + 0.95 * path[-1]
@@ -289,11 +309,17 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
                 raise ValueError('Unknown task')
             if not final:
                 ax.set_title('Latent Space Encoding [ %dh %d0m ]' % ((t + 1)//6, (t+1) % 6))
-            ax.set_xlabel('1st latent dim [red]')
-            ax.set_ylabel('2nd latent dim [green]')
-            ax.set_zlabel('3rd latent dim [blue]')
+            if latent_type == 'mom':
+                ax.set_xlabel('1st moment (mean)')
+                ax.set_ylabel('2nd moment')
+                ax.set_zlabel('3rd moment')
+            else:
+                ax.set_xlabel('1st latent dim [red]')
+                ax.set_ylabel('2nd latent dim [green]')
+                ax.set_zlabel('3rd latent dim [blue]')
             if plot is not None and task in plot and t_plot == t:
-                writers[task].setup(fig_ax[task][0], 'results/%s%s%s.png' % (savepresuf[0], task, savepresuf[1]))
+                fig_ax[task][0].savefig('results/%s%s%s.png' % (savepresuf[0], task, savepresuf[1]))
+                # writers[task].setup(fig_ax[task][0], 'results/%s%s%s.png' % (savepresuf[0], task, savepresuf[1]))
             if animate is not None and task in animate:
                 writers[task].grab_frame()
 
@@ -342,12 +368,20 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
                 raise ValueError('Unknown task')
             if not final:
                 ax[1].set_title('Latent Space Encoding [ %dh %d0m ]' % ((t + 1)//6, (t+1) % 6))
-            ax[0].set_xlabel('1st dim [red]')
-            ax[0].set_ylabel('2nd dim')
-            ax[1].set_xlabel('1st dim')
-            ax[1].set_ylabel('3th dim')
-            ax[2].set_xlabel('2nd dim')
-            ax[2].set_ylabel('3th dim')
+            if latent_type == 'mom':
+                ax[0].set_xlabel('1st moment')
+                ax[0].set_ylabel('2nd moment')
+                ax[1].set_xlabel('1st moment')
+                ax[1].set_ylabel('3th moment')
+                ax[2].set_xlabel('2nd moment')
+                ax[2].set_ylabel('3th moment')
+            else:
+                ax[0].set_xlabel('1st dim [red]')
+                ax[0].set_ylabel('2nd dim')
+                ax[1].set_xlabel('1st dim')
+                ax[1].set_ylabel('3th dim')
+                ax[2].set_xlabel('2nd dim')
+                ax[2].set_ylabel('3th dim')
             if plot is not None and task in plot and t_plot == t:
                 fig_ax[task][0].savefig('results/%s%s%s.png' % (savepresuf[0], task, savepresuf[1]))
             if animate is not None and task in animate:
