@@ -3,6 +3,11 @@ import time
 import numpy as np
 
 
+def sroot(x, k):
+    # signed root sign(x) * |x|^(1/k)
+    return x.sign() * x.abs() ** (1/k)
+
+
 def rgb_to_hsv(rgb):
     """
     Vectorized version of colorsys.rgb_to_hsv

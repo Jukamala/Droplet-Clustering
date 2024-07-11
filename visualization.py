@@ -67,7 +67,8 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             ax = fig.add_subplot(111, projection='3d')
             if 'latent' in task:
                 if latent_type == 'mom':
-                    l, u = None, None
+                    l = np.array([0, 0, -50])
+                    u = np.array([25, 10, 50])
                 else:
                     l = np.array([-1.5, -1, -2])
                     u = np.array([1, 1.5, 1.5])
@@ -101,9 +102,11 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
                     ax.set_zlim(l[2], u[2])
 
         elif '2D' in task:
-            fig, ax = plt.subplots(1, 3, figsize=(textwidth, 0.35 * textwidth))
+            c = 1 if not final else 2.5
+            fig, ax = plt.subplots(1, 3, figsize=(c * textwidth, 0.35 * c * textwidth))
             if latent_type == 'mom':
-                l, u = None, None
+                l = np.array([0, 0, -50]) if 'latent' in task else np.array([0, 0, 0])
+                u = np.array([25, 10, 50]) if 'latent' in task else np.array([639, 639, 74])
             else:
                 l = np.array([-2, -2, -2]) if 'latent' in task else np.array([0, 0, 0])
                 u = np.array([2, 2, 2]) if 'latent' in task else np.array([639, 639, 74])
@@ -219,11 +222,12 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
     for latent, labels, x, y, z, t, mass in get_full_latent_by_time(data, model, gmm):
         ths_tasks = (set(plot) if plot is not None and t_plot == t else set()) |\
                     (set(animate) if animate is not None else set()) |\
-                    set([p for p in plot if 'all' in p])
+                    (set([p for p in plot if 'all' in p]) if plot is not None else set())
 
         # Normalize and compute colors
         if latent_type == 'mom':
-            mn, mx = np.array([4.5, 11, 17]), np.array([17, 55, 90])  # paper moments
+            # mn, mx = np.array([4.5, 11, 17]), np.array([17, 55, 90])  # raw normalized moments
+            mn, mx = np.array([4.5, 0, -15]), np.array([15, 4, 15])  # m + sigma + skew
             # print(np.percentile(latent, 1, axis=0), np.percentile(latent, 99, axis=0))
             # mn, mx = np.percentile(latent, 3, axis=0), np.percentile(latent, 97, axis=0)
         else:
@@ -310,9 +314,9 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             if not final:
                 ax.set_title('Latent Space Encoding [ %dh %d0m ]' % ((t + 1)//6, (t+1) % 6))
             if latent_type == 'mom':
-                ax.set_xlabel('1st moment (mean)')
-                ax.set_ylabel('2nd moment')
-                ax.set_zlabel('3rd moment')
+                ax.set_xlabel('mean')
+                ax.set_ylabel('standard deviation')
+                ax.set_zlabel('skewness')
             else:
                 ax.set_xlabel('1st latent dim [red]')
                 ax.set_ylabel('2nd latent dim [green]')
@@ -369,12 +373,12 @@ def plot_latent_space(data, model, gmm=None, decoder=None, k=5, d=3, t_plot=0, p
             if not final:
                 ax[1].set_title('Latent Space Encoding [ %dh %d0m ]' % ((t + 1)//6, (t+1) % 6))
             if latent_type == 'mom':
-                ax[0].set_xlabel('1st moment')
-                ax[0].set_ylabel('2nd moment')
-                ax[1].set_xlabel('1st moment')
-                ax[1].set_ylabel('3th moment')
-                ax[2].set_xlabel('2nd moment')
-                ax[2].set_ylabel('3th moment')
+                ax[0].set_xlabel('mean')
+                ax[0].set_ylabel('standard deviation')
+                ax[1].set_xlabel('mean')
+                ax[1].set_ylabel('skewness')
+                ax[2].set_xlabel('standard deviation')
+                ax[2].set_ylabel('skewness')
             else:
                 ax[0].set_xlabel('1st dim [red]')
                 ax[0].set_ylabel('2nd dim')

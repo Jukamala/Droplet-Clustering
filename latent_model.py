@@ -14,7 +14,7 @@ from torch.distributions import constraints
 from torch.distributions.utils import broadcast_all
 
 from data import Data, DATA_PATH, DATA_FOLDER, TData
-from tools import progress
+from tools import progress, sroot
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -93,30 +93,60 @@ class ModifiedGammaDistribution(torch.distributions.ExponentialFamily):
         )
 
 
+class MomentEncoder(torch.nn.Module):
+    def forward(self, x):
+        # assume bin counts for [i, i+1] are all from i and estimate via MOM
+        t = torch.arange(x.shape[1]).to(x.device)
+        # non-centered moments
+        z_r = torch.stack([(x * t ** k).sum(axis=1) for k in range(1, 4)])
+        # normalized non-centered moments
+        # z_rn = torch.stack([((x * t ** k) ** (1 / k)).sum(axis=1) for k in range(1, 4)])
+        # z_rn = torch.stack([(x * t ** k).sum(axis=1) ** (1 / k) for k in range(1, 4)])
+        # mean + centered moments (i.e. standard deviation, ...)
+        z_c = torch.stack([z_r[0], z_r[1] - z_r[0] ** 2, z_r[2] - 3 * z_r[0] * z_r[1] + 2 * z_r[0] ** 3])
+        # mean + normalized centered moments (i.e. standard deviation, ...)
+        # z_cn = torch.stack([z_c[0], sroot(z_c[1], 2), sroot(z_c[2], 3)])
+        # mean + standard deviation + standardized moments (i.e. skewness, ...)
+        z_cn2 = torch.stack([z_r[0], sroot(z_c[1], 2), z_c[2] / sroot(z_c[1], 2)])
+        # mean + standard deviation + normalized standardized moments (i.e. third root of skewness, ...)
+        # z_s = torch.stack([z_r[0], sroot(z_c[1], 2), sroot(z_c[2], 3) / sroot(z_c[1], 2)])
+        return z_cn2.T
+
+
 class MomentAutoEncoder(torch.nn.Module):
     def __init__(self, family=ModifiedGammaDistribution):
         super().__init__()
+        self.encoder = MomentEncoder()
         self.family = family
 
     def forward(self, x, return_latent=False, from_latent=False):
         if from_latent:
-            z, self.c = x
+            z = x
         else:
             self.c = x.sum(axis=1, keepdims=True)
             x /= self.c
-            # assume bin counts for [i, i+1] are all from i and estimate via MOM
-            t = torch.arange(x.shape[1]).to(x.device)
-            z = torch.stack([((x * t ** k) ** (1/k)).sum(axis=1) for k in range(1, 4)], axis=1)
+            z = self.encoder(x)
         if return_latent:
-            self.c = None
             return z
         else:
-            # matching moments is ugly, so do it numerically
-            def moments_func(p):
-                tuple([p[1] ** (-k / p[2]) * torch.exp(
+            # matching moments for Gamma(alpha, beta)
+            p0 = torch.stack([z[:, 0]**2 / z[:, 1]**2, z[:, 0] / z[:, 1]**2, torch.ones_like(z[:, 0])], axis=1).log()
+
+            # matching modified gamma is hard, so do it numerically
+            def moments_func(p, z):
+                # moments from log_parameters
+                p = torch.tensor(p.reshape(-1, 3)).exp().T
+                m_r = tuple([p[1] ** (-k / p[2]) * torch.exp(
                     torch.lgamma((p[0] + k) / p[2]) - torch.lgamma(p[0] / p[2])
                 ) for k in range(1, 4)])
-            p = fsolve(moments_func, z[0])
+                m_c = ([m_r[0], m_r[1] - m_r[0] ** 2, m_r[2] - 3 * m_r[0] * m_r[1] + 2 * m_r[0] ** 3])
+                m_cn = torch.stack([m_r[0], sroot(m_c[1], 2), m_c[2] / sroot(m_c[1], 2)])
+                # minimize mse
+                return ((m_cn.T - z)**2).reshape(-1).cpu().numpy()
+            p = torch.cat([torch.tensor(fsolve(moments_func, p0[s:s+5].cpu(), args=z[s:s+5].cpu())).reshape(-1, 3)
+                 for s in range(int(np.ceil(z.shape[0]/5)))])
+            # print(moments_func(p0[0:100].cpu(), z[0:100].cpu()).reshape(-1, 3))
+            # print(moments_func(p, z[0:100].cpu()).reshape(-1, 3))
             self.c = None
             return None
 
@@ -161,6 +191,7 @@ class VariationalAutoencoder(torch.nn.Module):
     def __init__(self, beta=0.001, data_dims=33, hidden_dims=512, latent_dims=3):
         super(VariationalAutoencoder, self).__init__()
         self.encoder = VariationalEncoder(data_dims, hidden_dims, latent_dims)
+        self.encoder2 = MomentEncoder()
         self.decoder = Decoder(data_dims, hidden_dims, latent_dims)
         self.beta = beta
         L = 5
@@ -173,13 +204,19 @@ class VariationalAutoencoder(torch.nn.Module):
         if from_latent:
             z = x
         else:
+            # self.c = x.sum(axis=1, keepdims=True)
+            # x /= self.c
+            # z = self.encoder2(x)
             z = self.encoder(x, return_latent)
         if return_latent:
             return z
         else:
+            # out = torch.exp(self.decoder(z / torch.tensor([25, 10, 50]).to(device))) * self.c
+            # self.c = None
+            # return out
             return torch.exp(self.decoder(z))
 
-    def trainer(self, data, epochs=20, save="models/vae.cp", plot=True, loss_type='mse'):
+    def trainer(self, data, epochs=20, save="models/tmp_vae.cp", plot=True, loss_type='mse'):
         losses = []
         opt = torch.optim.Adam(self.parameters())
         for epoch, batch in progress(range(epochs), inner=data, text='Training',
@@ -277,7 +314,7 @@ def get_full_latent_by_time(data, model, gmm=None):
 
 
 def latent_cluster(data=None, latent_dims=3, hidden_dims=1024, beta=0.001, loss_type='mse', epochs=1,
-                   load_path="models/atex_mse.cp", save_path="models/atex_mse.cp"):
+                   load_path="models/atex_mse.cp", save_path="models/tmp_atex_mse.cp"):
 
     # Train latent encoding
     vae = VariationalAutoencoder(latent_dims=latent_dims, hidden_dims=hidden_dims, beta=beta).to(device)

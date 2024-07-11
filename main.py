@@ -10,8 +10,21 @@ if __name__ == '__main__':
     # data_plot = Data(DATA_ATEX_ALL).dataloader(batch_size=100000, by_time=True)
 
     # Train via: latent_cluster(data, load_path='models/atex_mse.cp')
+    # latent_cluster(data, load_path=None, save_path='models/decoder.cp', epochs=2)
     # latent_encoder, latent_decoder, gmm = latent_cluster(load_path='models/atex_mse.cp')
+    # latent_encoder, latent_decoder, gmm = latent_cluster(load_path='models/decoder.cp')
     latent_encoder, latent_decoder = latent_moments()
+
+    import torch
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    losses = []
+    for batch in data:
+        x = batch['x'].to(device)
+        base_sums = x.sum(axis=1)
+        x /= base_sums[:, None]
+        x_hat = latent_decoder(latent_encoder(x))
+        losses += [((x - x_hat) ** 2).mean().item()]
+    print(sum(losses[:-1]) / len(losses[:-1]))
 
     # plot_components(gmm, latent_decoder)
     plot_latent_space(data_plot, latent_encoder, decoder=latent_decoder, gmm=None,
@@ -32,6 +45,11 @@ if __name__ == '__main__':
         # plot=['latent3D', 'latent2D', 'data3D']
         # plot=['decoded']
 
+        # savepresuf=('mom_', ''), latent_type='mom',
+        # animate=['latent2D']
+        # animate=['latent3D']
+        # animate=['data3D', 'data1D'],
+
         # final
         # t_plot=-1, final=True, plot=['latent3D-all'],
         # t_plot=11, final=True, plot=['data3D'],
@@ -41,7 +59,7 @@ if __name__ == '__main__':
 
         # final - mom
         # t_plot=-1, final=True, plot=['latent3D-all'], savepresuf=('mom_', ''), latent_type='mom',
-        t_plot=-1, final=True, plot=['latent2D'], savepresuf=('mom_', ''), latent_type='mom',
+        # t_plot=-1, final=True, plot=['latent2D'], savepresuf=('mom_', ''), latent_type='mom',
         # t_plot=11, final=True, plot=['data3D'],
         # t_plot=23, final=True, plot=['data3D'],
         # t_plot=35, final=True, plot=['data3D'],
@@ -54,12 +72,12 @@ if __name__ == '__main__':
     # -------------------
 
     # render = ['1D', '3D']
-    render = ['']
+    render = ['1D']
     lt = 'mom'
     # lt = 'vae'
     final = True
-    # pre = 'tmp_'
-    pre = 'vae_' if lt == 'vae' else 'mom_'
+    pre = 'tmp_'
+    # pre = 'vae_' if lt == 'vae' else 'mom_'
 
     if '3D' in render:
         print('3D')
@@ -84,7 +102,7 @@ if __name__ == '__main__':
 
     if '1D' in render:
         print('1D')
-        kwargs = dict(model=latent_encoder, decoder=latent_decoder, final=final, plot=['data1D'])
+        kwargs = dict(model=latent_encoder, decoder=latent_decoder, final=final, plot=['data1D'], latent_type=lt)
         data_plot = Data(DATA_ATEX_ALL[0]).dataloader(batch_size=100000, by_time=True, t_plot=[11, 23, 35, 41])
         plot_latent_space(data_plot, **kwargs, t_plot=11, savepresuf=(pre, '_2x1_small'))
         plot_latent_space(data_plot, **kwargs, t_plot=23, savepresuf=(pre, '_4x1_small'))
